@@ -1,177 +1,107 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import plotly.express as px
-import plotly.graph_objects as go
-from datetime import date, timedelta
+import plotly.graph_objects as go # Using graph_objects instead of express
 
-# --- Configuration and Setup ---
-st.set_page_config(layout="wide", page_title="RBI Policy Pulse Dashboard")
-REPO_RATE_MOCK = 6.50 # Current mock Repo Rate
+# ---------- PAGE CONFIG ----------
+st.set_page_config(page_title="Monetary Policy Risk Dashboard", layout="wide")
 
-def generate_mock_data(start_date, end_date):
-    """Generates mock time-series data for the unique metrics."""
-    dates = pd.date_range(start=start_date, end=end_date, freq='M')
-    n = len(dates)
-    
-    data = {
-        'Date': dates,
-        # 1. Inflation Expectations vs. Actual
-        'Actual_CPI': np.clip(5 + np.sin(np.arange(n) / 5) + np.random.randn(n) * 0.5, 3.0, 8.0),
-        'IESH_1Y_Ahead': np.clip(4.5 + np.cos(np.arange(n) / 5) + np.random.randn(n) * 0.4, 3.5, 7.5),
-        # 3. Liquidity Forecasting
-        'LAF_Net_Liquidity_Billion': 1000 * np.sin(np.arange(n) / 4) + 500 * np.random.randn(n) + 10000,
-        # 4. Global Policy Divergence (India - US Fed Rate)
-        'Global_Divergence_Index': REPO_RATE_MOCK - (5.5 + np.random.randn(n) * 0.3),
-        'INR_USD': 80 + np.sin(np.arange(n) / 3) * 3 + np.random.randn(n) * 0.5
-    }
-    return pd.DataFrame(data)
+st.title("💹 Monetary Policy Risk Dashboard")
+st.markdown("""
+This dashboard allows you to simulate the impact of changes in **interest rates, liquidity, and inflation** on GDP and inflation. Adjust the sliders to see projected risks.
+""")
 
-# Load Mock Data
-mock_df = generate_mock_data(date(2022, 1, 1), date.today())
+# ---------- SIDEBAR INPUTS ----------
+st.sidebar.header("Policy Scenario Simulation")
+interest_rate_change = st.sidebar.slider("Interest Rate Change (%)", -2.0, 2.0, 0.0, 0.25)
+liquidity_change = st.sidebar.slider("Liquidity Change (%)", -5.0, 5.0, 0.0, 0.5)
+inflation_change = st.sidebar.slider("Inflation Change (%)", -2.0, 2.0, 0.0, 0.25)
 
-# --- Dashboard Header ---
-st.title("🏦 RBI Monetary Policy Pulse & Transmission Dashboard")
-st.markdown("---")
+# ---------- SIMULATED HISTORICAL DATA ----------
+years = list(range(2010, 2026))
+gdp = [1000 + i*50 + np.random.randint(-20, 20) for i in range(len(years))] # Example GDP in billions
+inflation = [5 + np.random.uniform(-1, 1) for _ in range(len(years))] # Example CPI %
 
-# --- Tab Navigation for Unique Features ---
-tab1, tab2, tab3, tab4, tab5 = st.tabs([
-    "Transmission Heatmap", "Inflation Expectations Gap", 
-    "Liquidity Forecasting", "Global Policy Divergence", "Sectoral Credit Impulse"
-])
+data = pd.DataFrame({
+    "Year": years,
+    "GDP": gdp,
+    "Inflation": inflation
+})
 
-# =========================================================================
-# 1. Policy Transmission Heatmap Tab
-# =========================================================================
-with tab1:
-    st.header("1. Policy Transmission Heatmap 📊")
-    st.markdown("Analyzes how Repo Rate changes transmit across various market rates over different time lags.")
+# ---------- SIMULATE IMPACT ----------
+# Simple formulas to simulate effect
+data['Projected_GDP'] = data['GDP'] - 0.2*interest_rate_change*data['GDP']/100 + 0.1*liquidity_change*data['GDP']/100 - 0.3*inflation_change*data['GDP']/100
+data['Projected_Inflation'] = data['Inflation'] + inflation_change
 
-    # Mock data for Heatmap
-    rates = ['Overnight MIBOR', '3-Month G-Sec Yield', '1-Year MCLR', 'Housing Loan Rate']
-    lags = ['1 Month Lag', '3 Month Lag', '6 Month Lag']
-    # Mock data: Higher values (darker color) mean stronger transmission
-    transmission_data = np.array([
-        [0.95, 0.85, 0.70],
-        [0.75, 0.80, 0.85],
-        [0.40, 0.65, 0.75],
-        [0.30, 0.50, 0.60]
-    ])
-    
-    heatmap_df = pd.DataFrame(transmission_data, index=rates, columns=lags)
+# ---------- PLOTS (Now using plotly.graph_objects) ----------
 
-    fig = px.imshow(
-        heatmap_df,
-        text_auto=".1f",
-        aspect="auto",
-        color_continuous_scale=px.colors.sequential.Viridis,
-        title="Repo Rate Transmission Coefficient (0 to 1)"
-    )
-    fig.update_xaxes(side="top")
-    st.plotly_chart(fig, use_container_width=True)
+# GDP Plot
+fig_gdp = go.Figure()
+fig_gdp.add_trace(go.Scatter(
+    x=data['Year'], 
+    y=data['GDP'], 
+    mode='lines+markers', 
+    name='GDP'
+))
+fig_gdp.add_trace(go.Scatter(
+    x=data['Year'], 
+    y=data['Projected_GDP'], 
+    mode='lines+markers', 
+    name='Projected_GDP'
+))
+fig_gdp.update_layout(
+    title="GDP vs Projected GDP",
+    xaxis_title='Year',
+    yaxis_title='GDP (in billions)'
+)
 
-# =========================================================================
-# 2. Inflation Expectations Gap Tab
-# =========================================================================
-with tab2:
-    st.header("2. Inflation Expectations Gap Analysis 📈")
-    st.markdown("Compares household expectations on inflation (IESH) against actual CPI. The **Gap** is a measure of public confidence and policy credibility.")
+# Inflation Plot
+fig_inflation = go.Figure()
+fig_inflation.add_trace(go.Scatter(
+    x=data['Year'], 
+    y=data['Inflation'], 
+    mode='lines+markers', 
+    name='Inflation'
+))
+fig_inflation.add_trace(go.Scatter(
+    x=data['Year'], 
+    y=data['Projected_Inflation'], 
+    mode='lines+markers', 
+    name='Projected_Inflation'
+))
+fig_inflation.update_layout(
+    title="Inflation vs Projected Inflation",
+    xaxis_title='Year',
+    yaxis_title='Inflation (%)'
+)
 
-    # Create the Gap column
-    mock_df['Expectations_Gap'] = mock_df['IESH_1Y_Ahead'] - mock_df['Actual_CPI']
+# ---------- DISPLAY ----------
+st.plotly_chart(fig_gdp, use_container_width=True)
+st.plotly_chart(fig_inflation, use_container_width=True)
 
-    # Primary Line Chart: Actual vs. Expected
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(x=mock_df['Date'], y=mock_df['Actual_CPI'], mode='lines', name='Actual CPI (%)'))
-    fig.add_trace(go.Scatter(x=mock_df['Date'], y=mock_df['IESH_1Y_Ahead'], mode='lines', name='IESH (Expected CPI) (%)'))
-    
-    # Bar Chart for the Gap
-    fig_gap = px.bar(mock_df, x='Date', y='Expectations_Gap', 
-                      title='Inflation Expectations Gap (IESH - Actual CPI)',
-                      color='Expectations_Gap',
-                      color_continuous_scale='RdBu')
-    
-    st.plotly_chart(fig, use_container_width=True)
-    st.plotly_chart(fig_gap, use_container_width=True)
+# ---------- RISK SCORE ----------
+risk_score = abs(interest_rate_change)*3 + abs(liquidity_change)*2 + abs(inflation_change)*4
+risk_level = ""
+if risk_score < 3:
+    risk_level = "Low"
+elif risk_score < 6:
+    risk_level = "Medium"
+else:
+    risk_level = "High"
 
-# =========================================================================
-# 3. Liquidity Forecasting Tool Tab
-# =========================================================================
-with tab3:
-    st.header("3. Systemic Liquidity Pulse & Forecast 🌊")
-    st.markdown("Tracks the Net Liquidity Adjustment Facility (LAF) and projects short-term trends based on known drivers (e.g., GST/Tax outflows, government securities).")
+st.subheader("⚠️ Overall Risk Assessment")
+st.metric(label="Risk Score (0-10)", value=f"{risk_score:.1f}", delta=f"Level: {risk_level}")
 
-    # Add a simple forecast (just extending the last trend with noise for mock)
-    last_date = mock_df['Date'].iloc[-1]
-    forecast_dates = pd.date_range(start=last_date + timedelta(days=1), periods=30, freq='D')
-    last_liquidity = mock_df['LAF_Net_Liquidity_Billion'].iloc[-1]
-    forecast_liquidity = last_liquidity + 50 * np.sin(np.arange(30) / 5) + np.random.randn(30) * 10
-    
-    forecast_df = pd.DataFrame({'Date': forecast_dates, 'LAF_Net_Liquidity_Billion': forecast_liquidity})
-    forecast_df['Type'] = 'Forecast'
-    mock_df['Type'] = 'Actual'
-    
-    combined_df = pd.concat([mock_df[['Date', 'LAF_Net_Liquidity_Billion', 'Type']], 
-                              forecast_df])
+# ---------- SCENARIO SUMMARY ----------
+st.subheader("📊 Scenario Summary")
+summary_data = {
+    "Policy": ["Interest Rate Change (%)", "Liquidity Change (%)", "Inflation Change (%)"],
+    "Change Applied": [interest_rate_change, liquidity_change, inflation_change]
+}
+summary_df = pd.DataFrame(summary_data)
+st.table(summary_df)
 
-    fig = px.line(combined_df, x='Date', y='LAF_Net_Liquidity_Billion', color='Type',
-                  title='Net LAF Liquidity (₹ Billion) - Actual and 30-Day Forecast',
-                  markers=False)
-    
-    st.plotly_chart(fig, use_container_width=True)
-    
-    # Display drivers of change (mock data for today's liquidity)
-    st.subheader("Liquidity Drivers for Next 7 Days (Mock)")
-    col1, col2, col3 = st.columns(3)
-    col1.metric("Government Cash Balance", "+₹500 Bn", "Tax Inflows")
-    col2.metric("Forex Intervention", "-₹150 Bn", "USD Sales")
-    col3.metric("Festival Currency Demand", "-₹200 Bn", "Seasonal")
-
-# =========================================================================
-# 4. Global Policy Divergence Index Tab
-# =========================================================================
-with tab4:
-    st.header("4. Global Policy Divergence Index 🌎")
-    st.markdown("Visualizing the difference between RBI's Repo Rate and the US Federal Reserve's rate, and its correlation with the Rupee (INR/USD).")
-
-    fig = go.Figure()
-    # Add Divergence Index (Bar Chart)
-    fig.add_trace(go.Bar(x=mock_df['Date'], y=mock_df['Global_Divergence_Index'], name='Policy Divergence (Percentage Points)', yaxis='y1'))
-    
-    # Add INR/USD Rate (Line on secondary axis)
-    fig.add_trace(go.Scatter(x=mock_df['Date'], y=mock_df['INR_USD'], mode='lines', name='INR/USD Exchange Rate', yaxis='y2'))
-
-    fig.update_layout(
-        title='Global Policy Divergence vs. INR/USD Exchange Rate',
-        yaxis=dict(title='Policy Divergence Index (pp)', side='left'),
-        yaxis2=dict(title='INR/USD', side='right', overlaying='y', range=[75, 85]) # Example range
-    )
-
-    st.plotly_chart(fig, use_container_width=True)
-
-# =========================================================================
-# 5. Sectoral Credit Impulse Tab
-# =========================================================================
-with tab5:
-    st.header("5. Sectoral Credit Impulse Tracker 🏗️")
-    st.markdown("Measures the change in new credit flow relative to GDP to assess which sectors are actively leveraging credit post-policy changes.")
-
-    # Mock data for Sectoral Credit Impulse (last 12 months)
-    sector_impulse = {
-        'Sector': ['Infrastructure', 'Manufacturing', 'Services', 'Housing', 'Agriculture'],
-        'Credit_Impulse': [0.8, 1.2, 0.6, 1.5, 0.4], # Higher is better/more impulse
-        'Credit_Flow_YoY': [15.2, 10.5, 18.0, 22.1, 7.8],
-        'GDP_Share': [10, 20, 50, 5, 15]
-    }
-    impulse_df = pd.DataFrame(sector_impulse)
-    
-    fig = px.sunburst(
-        impulse_df, 
-        path=['Sector'], 
-        values='GDP_Share', 
-        color='Credit_Impulse', 
-        color_continuous_scale='RdYlGn', 
-        title='Sectoral Credit Impulse Breakdown (Credit Impulse score determines color)'
-    )
-
-    st.plotly_chart(fig, use_container_width=True)
+st.markdown("""
+---
+**Note:** This dashboard uses simplified simulation formulas to demonstrate the effects of monetary policy. For real-world analysis, integrate actual RBI data and econometric models.
+""")
