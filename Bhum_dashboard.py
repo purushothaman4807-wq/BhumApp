@@ -243,39 +243,32 @@ comparison = pd.DataFrame({
 comparison["Change_pct"] = ((comparison["Projected"] - comparison["Baseline"]) / comparison["Baseline"]) * 100.0
 st.table(comparison.style.format({"Baseline": "{:.2f}", "Projected": "{:.2f}", "Change_pct": "{:+.2f}%"}))
 
-# ---------- Automated Insights ----------
-st.subheader("📘 Automated Insights")
+# ---------- 4. Heatmap of Risk Contributions ----------
+st.subheader("Risk Contribution Heatmap (per component)")
+heat_df = pd.DataFrame({
+    "Component": ["Interest Rate", "Liquidity", "Inflation"],
+    "Change": [interest_rate_change, liquidity_change, inflation_change],
+    "Contribution (raw)": [contrib_interest, contrib_liquidity, contrib_inflation]
+}).set_index("Component")
 
-try:
-    dominant = heat_df["Contribution_raw"].idxmax()
-    dominant_value = heat_df["Contribution_raw"].max()
+# Normalize for heat visualization 0-1
+norm = (heat_df["Contribution (raw)"] - heat_df["Contribution (raw)"].min()) / (heat_df["Contribution (raw)"].ptp() + 1e-9)
+heat_df["Normalized"] = norm
 
-    insight = ""
-
-    if dominant == "Interest Rate":
-        insight = (
-            f"Interest rate changes are the largest driver of risk "
-            f"with a contribution of {dominant_value:.2f}. "
-            f"This suggests policy tightening or easing has strong macro impact."
-        )
-
-    elif dominant == "Liquidity":
-        insight = (
-            f"Liquidity conditions are the dominant contributor to risk "
-            f"({dominant_value:.2f}). "
-            f"Market liquidity shocks appear to strongly influence economic volatility."
-        )
-
-    elif dominant == "Inflation":
-        insight = (
-            f"Inflation is contributing the highest risk ({dominant_value:.2f}). "
-            f"This suggests price stability is the biggest vulnerability in the current scenario."
-        )
-
-    st.write(insight)
-
-except Exception as e:
-    st.warning("Insight generation temporarily unavailable.")
+if MATPLOTLIB_AVAILABLE:
+    fig, ax = plt.subplots(figsize=(5, 1.5))
+    sns_data = heat_df[["Normalized"]].T  # one-row heatmap
+    # Use imshow
+    ax.imshow(sns_data, aspect="auto", cmap="Reds")
+    ax.set_yticks([])
+    ax.set_xticks(range(len(heat_df.index)))
+    ax.set_xticklabels(heat_df.index, rotation=20)
+    for i, val in enumerate(heat_df["Normalized"]):
+        ax.text(i, 0, f"{heat_df['Change'].iloc[i]:+.2f}\n({heat_df['Contribution (raw)'].iloc[i]:.1f})", ha="center", va="center", color="black", fontsize=9)
+    st.pyplot(fig)
+else:
+    # fallback: styled dataframe with background gradient
+    st.dataframe(heat_df.style.background_gradient(subset=["Normalized"], cmap="Reds").format({"Change": "{:+.2f}", "Contribution (raw)": "{:.2f}"}))
 
 # ---------- 5. Dynamic Insights (AI-like logic) ----------
 st.subheader("Automated Insights")
