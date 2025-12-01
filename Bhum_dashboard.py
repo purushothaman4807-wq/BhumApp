@@ -243,42 +243,31 @@ comparison = pd.DataFrame({
 comparison["Change_pct"] = ((comparison["Projected"] - comparison["Baseline"]) / comparison["Baseline"]) * 100.0
 st.table(comparison.style.format({"Baseline": "{:.2f}", "Projected": "{:.2f}", "Change_pct": "{:+.2f}%"}))
 
-# ---------- 4. Heatmap of Risk Contributions ----------
-st.subheader("Risk Contribution Heatmap (per component)")
+# ---------- 4. Risk Contribution Heatmap (per component) ----------
+st.subheader("Risk Contribution (per component) — Safe Mode")
 
 heat_df = pd.DataFrame({
     "Component": ["Interest Rate", "Liquidity", "Inflation"],
     "Change": [interest_rate_change, liquidity_change, inflation_change],
-    "Contribution (raw)": [contrib_interest, contrib_liquidity, contrib_inflation]
+    "Contribution_raw": [contrib_interest, contrib_liquidity, contrib_inflation]
 }).set_index("Component")
 
-# FIXED NORMALIZATION — no .ptp() used now
-rng = heat_df["Contribution (raw)"].max() - heat_df["Contribution (raw)"].min()
-norm = (heat_df["Contribution (raw)"] - heat_df["Contribution (raw)"].min()) / (rng + 1e-9)
-heat_df["Normalized"] = norm
-
-if MATPLOTLIB_AVAILABLE:
-    fig, ax = plt.subplots(figsize=(5, 1.5))
-    sns_data = heat_df[["Normalized"]].T
-    ax.imshow(sns_data, aspect="auto", cmap="Reds")
-    ax.set_yticks([])
-    ax.set_xticks(range(len(heat_df.index)))
-    ax.set_xticklabels(heat_df.index, rotation=20)
-
-    for i, val in enumerate(heat_df["Normalized"]):
-        ax.text(
-            i, 0,
-            f"{heat_df['Change'].iloc[i]:+.2f}\n({heat_df['Contribution (raw)'].iloc[i]:.1f})",
-            ha="center", va="center", color="black", fontsize=9
-        )
-
-    st.pyplot(fig)
+# Normalized 0–1 safely (no ptp/empty errors)
+ptp_val = heat_df["Contribution_raw"].max() - heat_df["Contribution_raw"].min()
+if ptp_val == 0:
+    heat_df["Normalized"] = 0.5
 else:
-    st.dataframe(
-        heat_df.style.background_gradient(
-            subset=["Normalized"], cmap="Reds"
-        ).format({"Change": "{:+.2f}", "Contribution (raw)": "{:.2f}"})
-    )
+    heat_df["Normalized"] = (heat_df["Contribution_raw"] - heat_df["Contribution_raw"].min()) / ptp_val
+
+# SAFE & CLEAN TABLE (no matplotlib, no seaborn)
+st.write("Heatmap disabled due to Streamlit Cloud matplotlib limitations.")
+st.dataframe(
+    heat_df.style.format({
+        "Change": "{:+.2f}",
+        "Contribution_raw": "{:.2f}",
+        "Normalized": "{:.2f}"
+    })
+)
 
 
 # ---------- 5. Dynamic Insights (AI-like logic) ----------
