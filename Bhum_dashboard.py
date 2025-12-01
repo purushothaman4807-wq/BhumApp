@@ -243,32 +243,39 @@ comparison = pd.DataFrame({
 comparison["Change_pct"] = ((comparison["Projected"] - comparison["Baseline"]) / comparison["Baseline"]) * 100.0
 st.table(comparison.style.format({"Baseline": "{:.2f}", "Projected": "{:.2f}", "Change_pct": "{:+.2f}%"}))
 
-# ---------- 4. Risk Contribution Heatmap (per component) ----------
-st.subheader("Risk Contribution (per component) — Safe Mode")
+# ---------- Automated Insights ----------
+st.subheader("📘 Automated Insights")
 
-heat_df = pd.DataFrame({
-    "Component": ["Interest Rate", "Liquidity", "Inflation"],
-    "Change": [interest_rate_change, liquidity_change, inflation_change],
-    "Contribution_raw": [contrib_interest, contrib_liquidity, contrib_inflation]
-}).set_index("Component")
+try:
+    dominant = heat_df["Contribution_raw"].idxmax()
+    dominant_value = heat_df["Contribution_raw"].max()
 
-# Normalized 0–1 safely (no ptp/empty errors)
-ptp_val = heat_df["Contribution_raw"].max() - heat_df["Contribution_raw"].min()
-if ptp_val == 0:
-    heat_df["Normalized"] = 0.5
-else:
-    heat_df["Normalized"] = (heat_df["Contribution_raw"] - heat_df["Contribution_raw"].min()) / ptp_val
+    insight = ""
 
-# SAFE & CLEAN TABLE (no matplotlib, no seaborn)
-st.write("Heatmap disabled due to Streamlit Cloud matplotlib limitations.")
-st.dataframe(
-    heat_df.style.format({
-        "Change": "{:+.2f}",
-        "Contribution_raw": "{:.2f}",
-        "Normalized": "{:.2f}"
-    })
-)
+    if dominant == "Interest Rate":
+        insight = (
+            f"Interest rate changes are the largest driver of risk "
+            f"with a contribution of {dominant_value:.2f}. "
+            f"This suggests policy tightening or easing has strong macro impact."
+        )
 
+    elif dominant == "Liquidity":
+        insight = (
+            f"Liquidity conditions are the dominant contributor to risk "
+            f"({dominant_value:.2f}). "
+            f"Market liquidity shocks appear to strongly influence economic volatility."
+        )
+
+    elif dominant == "Inflation":
+        insight = (
+            f"Inflation is contributing the highest risk ({dominant_value:.2f}). "
+            f"This suggests price stability is the biggest vulnerability in the current scenario."
+        )
+
+    st.write(insight)
+
+except Exception as e:
+    st.warning("Insight generation temporarily unavailable.")
 
 # ---------- 5. Dynamic Insights (AI-like logic) ----------
 st.subheader("Automated Insights")
