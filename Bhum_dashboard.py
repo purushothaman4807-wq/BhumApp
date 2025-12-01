@@ -243,32 +243,28 @@ comparison = pd.DataFrame({
 comparison["Change_pct"] = ((comparison["Projected"] - comparison["Baseline"]) / comparison["Baseline"]) * 100.0
 st.table(comparison.style.format({"Baseline": "{:.2f}", "Projected": "{:.2f}", "Change_pct": "{:+.2f}%"}))
 
-# ---------- 4. Heatmap of Risk Contributions ----------
-st.subheader("Risk Contribution Heatmap (per component)")
-heat_df = pd.DataFrame({
+# ---------- 4. Risk Contributions (Bar Chart) ----------
+st.subheader("Risk Contributions by Component")
+
+risk_df = pd.DataFrame({
     "Component": ["Interest Rate", "Liquidity", "Inflation"],
-    "Change": [interest_rate_change, liquidity_change, inflation_change],
-    "Contribution (raw)": [contrib_interest, contrib_liquidity, contrib_inflation]
-}).set_index("Component")
+    "Contribution": [contrib_interest, contrib_liquidity, contrib_inflation],
+    "Change": [interest_rate_change, liquidity_change, inflation_change]
+})
 
-# Normalize for heat visualization 0-1
-norm = (heat_df["Contribution (raw)"] - heat_df["Contribution (raw)"].min()) / (heat_df["Contribution (raw)"].ptp() + 1e-9)
-heat_df["Normalized"] = norm
+# Sort descending for better visual
+risk_df = risk_df.sort_values("Contribution", ascending=False)
 
-if MATPLOTLIB_AVAILABLE:
-    fig, ax = plt.subplots(figsize=(5, 1.5))
-    sns_data = heat_df[["Normalized"]].T  # one-row heatmap
-    # Use imshow
-    ax.imshow(sns_data, aspect="auto", cmap="Reds")
-    ax.set_yticks([])
-    ax.set_xticks(range(len(heat_df.index)))
-    ax.set_xticklabels(heat_df.index, rotation=20)
-    for i, val in enumerate(heat_df["Normalized"]):
-        ax.text(i, 0, f"{heat_df['Change'].iloc[i]:+.2f}\n({heat_df['Contribution (raw)'].iloc[i]:.1f})", ha="center", va="center", color="black", fontsize=9)
-    st.pyplot(fig)
-else:
-    # fallback: styled dataframe with background gradient
-    st.dataframe(heat_df.style.background_gradient(subset=["Normalized"], cmap="Reds").format({"Change": "{:+.2f}", "Contribution (raw)": "{:.2f}"}))
+# Plot using Streamlit bar chart
+st.bar_chart(
+    data=risk_df.set_index("Component")["Contribution"]
+)
+
+# Also show the table for clarity
+st.table(risk_df.style.format({
+    "Contribution": "{:.2f}",
+    "Change": "{:+.2f}"
+}))
 
 # ---------- 5. Dynamic Insights (AI-like logic) ----------
 st.subheader("Automated Insights")
