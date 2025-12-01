@@ -87,9 +87,9 @@ with tab2:
     
     # Bar Chart for the Gap
     fig_gap = px.bar(mock_df, x='Date', y='Expectations_Gap', 
-                     title='Inflation Expectations Gap (IESH - Actual CPI)',
-                     color='Expectations_Gap',
-                     color_continuous_scale='RdBu')
+                      title='Inflation Expectations Gap (IESH - Actual CPI)',
+                      color='Expectations_Gap',
+                      color_continuous_scale='RdBu')
     
     st.plotly_chart(fig, use_container_width=True)
     st.plotly_chart(fig_gap, use_container_width=True)
@@ -112,7 +112,7 @@ with tab3:
     mock_df['Type'] = 'Actual'
     
     combined_df = pd.concat([mock_df[['Date', 'LAF_Net_Liquidity_Billion', 'Type']], 
-                             forecast_df])
+                              forecast_df])
 
     fig = px.line(combined_df, x='Date', y='LAF_Net_Liquidity_Billion', color='Type',
                   title='Net LAF Liquidity (₹ Billion) - Actual and 30-Day Forecast',
