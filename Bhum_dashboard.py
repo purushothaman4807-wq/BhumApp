@@ -102,9 +102,9 @@ else:
 
 col1.metric(
     label="⚠️ Overall Risk Score (0-10)", 
-    value=f"{risk_score:.1f}", 
-    delta=f"Level: {risk_level}",
-    delta_color=risk_color
+    value=f"{risk_score:.1f} ({risk_level})", # Integrated risk level into value display
+    # delta=f"Level: {risk_level}", # Removed delta to fix Streamlit API Exception
+    # delta_color=risk_color # Removed delta_color as delta is required
 )
 
 # 2. Real Interest Rate
@@ -115,12 +115,12 @@ col2.metric(
 )
 
 # 3. Inflation Target Gap
-# Fixing delta_color here too: 'off' is a valid option.
+# To use delta_color, the delta value must be numeric. Here, we can use the gap itself as delta.
 gap_delta_color = "red" if inflation_target_gap > 0.5 else ("green" if inflation_target_gap < -0.5 else "off")
 col3.metric(
     label=f"Inflation Target Gap (Target: {RBI_TARGET_INFLATION}%)",
     value=f"{inflation_target_gap:.2f} pp",
-    delta=f"Projected Inflation: {latest_inflation:.2f}%",
+    delta=f"Projected: {latest_inflation:.2f}%",
     delta_color=gap_delta_color
 )
 
