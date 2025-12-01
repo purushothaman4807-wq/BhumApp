@@ -95,7 +95,7 @@ if risk_score < 3:
     risk_color = "green"
 elif risk_score < 6:
     risk_level = "Medium (Yellow)"
-    risk_color = "orange"
+    risk_color = "off"  # Mapped 'orange' (Medium) to 'off' (neutral)
 else:
     risk_level = "High (Red)"
     risk_color = "red"
@@ -115,6 +115,7 @@ col2.metric(
 )
 
 # 3. Inflation Target Gap
+# Fixing delta_color here too: 'off' is a valid option.
 gap_delta_color = "red" if inflation_target_gap > 0.5 else ("green" if inflation_target_gap < -0.5 else "off")
 col3.metric(
     label=f"Inflation Target Gap (Target: {RBI_TARGET_INFLATION}%)",
