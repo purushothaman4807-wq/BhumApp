@@ -1,4 +1,3 @@
-# app.py
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -20,8 +19,8 @@ inflation_change = st.sidebar.slider("Inflation Change (%)", -2.0, 2.0, 0.0, 0.2
 
 # ---------- SIMULATED HISTORICAL DATA ----------
 years = list(range(2010, 2026))
-gdp = [1000 + i*50 + np.random.randint(-20, 20) for i in range(len(years))]  # Example GDP in billions
-inflation = [5 + np.random.uniform(-1, 1) for _ in range(len(years))]  # Example CPI %
+gdp = [1000 + i*50 + np.random.randint(-20, 20) for i in range(len(years))] # Example GDP in billions
+inflation = [5 + np.random.uniform(-1, 1) for _ in range(len(years))] # Example CPI %
 
 data = pd.DataFrame({
     "Year": years,
