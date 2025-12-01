@@ -266,45 +266,28 @@ st.table(risk_df.style.format({
     "Change": "{:+.2f}"
 }))
 
-# ---------- 5. Dynamic Insights (AI-like logic) ----------
-st.subheader("Automated Insights")
-insights = []
-# Insight based on contributions
-dominant = heat_df["Contribution (raw)"].idxmax()
-insights.append(f"- The largest contributor to risk is **{dominant}** (contribution: {heat_df.loc[dominant, 'Contribution (raw)']:.2f}).")
+# ---------- 5. Dashboard Insights & Usage Notes ----------
+st.subheader("Dashboard Insights & Usage Notes")
 
-# Interpret direction
-if interest_rate_change > 0:
-    insights.append(f"- Rising interest rates ({interest_rate_change:+.2f} pp) are likely to **slow GDP growth** and tighten financial conditions.")
-elif interest_rate_change < 0:
-    insights.append(f"- Cutting interest rates ({interest_rate_change:+.2f} pp) provides stimulus and may boost growth.")
-else:
-    insights.append("- Interest rate stance unchanged in this scenario.")
+st.markdown("""
+This dashboard allows you to explore the impact of hypothetical monetary policy changes on key macroeconomic indicators. Here’s how to interpret the sections:
 
-if liquidity_change < 0:
-    insights.append(f"- Liquidity contraction ({liquidity_change:+.2f}%) could pressure markets and credit availability.")
-elif liquidity_change > 0:
-    insights.append(f"- Liquidity injection ({liquidity_change:+.2f}%) supports activity and financial markets.")
-else:
-    insights.append("- No major change in liquidity.")
+- **Scenario Overview:** Shows the policy inputs you have chosen, including interest rate changes, liquidity adjustments, and inflation assumptions. Real policy rate is computed as nominal rate minus inflation.
 
-if inflation_change > 0.5:
-    insights.append(f"- Inflation is rising by {inflation_change:+.2f} pp — monetary tightening may be appropriate to anchor expectations.")
-elif inflation_change < -0.5:
-    insights.append(f"- Inflation is falling by {inflation_change:+.2f} pp — policy could stay accommodative to support demand.")
-else:
-    insights.append("- Inflation change is modest.")
+- **GDP & Projections:** Displays historical GDP alongside projected GDP under the selected scenario. Confidence bands illustrate potential variability due to macro volatility.
 
-# Put a combined risk insight
-if risk_score_normalized >= 7:
-    insights.append("- Overall assessment: **High risk**. Consider combining measured liquidity support with targeted supply-side measures.")
-elif risk_score_normalized >= 4:
-    insights.append("- Overall assessment: **Medium risk**. Monitor incoming data and be ready to adjust policy.")
-else:
-    insights.append("- Overall assessment: **Low risk**. Scenario appears manageable.")
+- **Inflation Projection:** Historical vs. projected inflation, showing how changes in policy could affect price levels.
 
-for line in insights:
-    st.write(line)
+- **GDP per Capita:** Shows per-capita GDP for population-adjusted economic assessment.
+
+- **Baseline vs Projected Comparison:** Quick snapshot of the latest year comparing baseline vs projected values and percentage change.
+
+- **Risk Contributions by Component:** Bar chart showing the contribution of interest rate, liquidity, and inflation changes to the overall scenario risk.
+
+- **Download Simulation Data:** Export the full table for further analysis or reporting.
+
+**Tip:** Use the sliders and scenario presets on the sidebar to experiment with different policy conditions and observe how each component affects GDP, inflation, and risk scores.
+""")
 
 # ---------- DOWNLOAD BUTTON ----------
 st.subheader("Download Simulation Data")
