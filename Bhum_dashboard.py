@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import plotly.graph_objects as go # Using graph_objects instead of express
+# Removed: import plotly.graph_objects as go 
 
 # ---------- PAGE CONFIG ----------
 st.set_page_config(page_title="Monetary Policy Risk Dashboard", layout="wide")
@@ -27,57 +27,26 @@ data = pd.DataFrame({
     "GDP": gdp,
     "Inflation": inflation
 })
+data = data.set_index('Year') # Set Year as index for cleaner Streamlit charting
 
 # ---------- SIMULATE IMPACT ----------
 # Simple formulas to simulate effect
 data['Projected_GDP'] = data['GDP'] - 0.2*interest_rate_change*data['GDP']/100 + 0.1*liquidity_change*data['GDP']/100 - 0.3*inflation_change*data['GDP']/100
 data['Projected_Inflation'] = data['Inflation'] + inflation_change
 
-# ---------- PLOTS (Now using plotly.graph_objects) ----------
 
-# GDP Plot
-fig_gdp = go.Figure()
-fig_gdp.add_trace(go.Scatter(
-    x=data['Year'], 
-    y=data['GDP'], 
-    mode='lines+markers', 
-    name='GDP'
-))
-fig_gdp.add_trace(go.Scatter(
-    x=data['Year'], 
-    y=data['Projected_GDP'], 
-    mode='lines+markers', 
-    name='Projected_GDP'
-))
-fig_gdp.update_layout(
-    title="GDP vs Projected GDP",
-    xaxis_title='Year',
-    yaxis_title='GDP (in billions)'
-)
+# ---------- PLOTS (Now using Streamlit Native Charts) ----------
 
-# Inflation Plot
-fig_inflation = go.Figure()
-fig_inflation.add_trace(go.Scatter(
-    x=data['Year'], 
-    y=data['Inflation'], 
-    mode='lines+markers', 
-    name='Inflation'
-))
-fig_inflation.add_trace(go.Scatter(
-    x=data['Year'], 
-    y=data['Projected_Inflation'], 
-    mode='lines+markers', 
-    name='Projected_Inflation'
-))
-fig_inflation.update_layout(
-    title="Inflation vs Projected Inflation",
-    xaxis_title='Year',
-    yaxis_title='Inflation (%)'
-)
+st.subheader("GDP vs Projected GDP (in billions)")
+# Select and plot both columns
+gdp_plot_data = data[['GDP', 'Projected_GDP']]
+st.line_chart(gdp_plot_data)
 
-# ---------- DISPLAY ----------
-st.plotly_chart(fig_gdp, use_container_width=True)
-st.plotly_chart(fig_inflation, use_container_width=True)
+st.subheader("Inflation vs Projected Inflation (%)")
+# Select and plot both columns
+inflation_plot_data = data[['Inflation', 'Projected_Inflation']]
+st.line_chart(inflation_plot_data)
+
 
 # ---------- RISK SCORE ----------
 risk_score = abs(interest_rate_change)*3 + abs(liquidity_change)*2 + abs(inflation_change)*4
@@ -98,6 +67,7 @@ summary_data = {
     "Policy": ["Interest Rate Change (%)", "Liquidity Change (%)", "Inflation Change (%)"],
     "Change Applied": [interest_rate_change, liquidity_change, inflation_change]
 }
+# Reset index for table display
 summary_df = pd.DataFrame(summary_data)
 st.table(summary_df)
 
