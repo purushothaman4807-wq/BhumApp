@@ -1,8 +1,8 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
-import seaborn as sns
+# Removed: import matplotlib.pyplot as plt
+# Removed: import seaborn as sns
 
 # --- Custom CSS for Professional Look (RBI-Inspired Tones: Blue/Gold/Silver) ---
 st.markdown("""
@@ -25,8 +25,8 @@ h1, h2, h3, h4, .css-1dp5ss7 {
 .stMetric:hover {
     transform: translateY(-2px);
 }
-/* Seaborn/Matplotlib styling for chart area */
-.stPlotlyChart, .stImage {
+/* Native Streamlit chart area styling */
+.stLineChart, .stImage {
     padding: 10px;
     border-radius: 10px;
     background-color: #FFFFFF;
@@ -40,9 +40,6 @@ div[data-testid="stTable"] table {
 }
 </style>
 """, unsafe_allow_html=True)
-
-# Set Seaborn style globally for better chart aesthetics
-sns.set_theme(style="whitegrid")
 
 # --- HYPOTHETICAL CENTRAL BANK PARAMETERS ---
 RBI_TARGET_INFLATION = 4.0 # CPI Target set by the government, typically 4% +/- 2%
@@ -140,51 +137,19 @@ st.markdown("---")
 # ---------- CHARTS (Organized in Two Columns) ----------
 chart_col1, chart_col2 = st.columns(2)
 
-# Prepare data for Seaborn/Matplotlib
-data_reset = data.reset_index()
-
 with chart_col1:
     st.subheader("GDP vs Projected GDP (in billions)")
-    
-    # Matplotlib Figure 1: GDP
-    fig1, ax1 = plt.subplots(figsize=(8, 4))
-    
-    # GDP (Baseline)
-    sns.lineplot(x='Year', y='GDP', data=data_reset, ax=ax1, label='Baseline GDP', color='#004D99', linewidth=2)
-    
-    # Projected GDP (Scenario)
-    sns.lineplot(x='Year', y='Projected_GDP', data=data_reset, ax=ax1, label='Projected GDP', color='#FFC300', linestyle='--', linewidth=2)
-    
-    ax1.set_title("GDP vs Projected GDP (in billions)", fontsize=14)
-    ax1.set_ylabel("GDP (in billions)", fontsize=12)
-    ax1.set_xlabel("Year", fontsize=12)
-    ax1.legend(loc='upper left')
-    plt.tight_layout()
-    st.pyplot(fig1)
-    plt.close(fig1) # Close figure to prevent memory warning
+    # Select and plot both columns, keeping Year as index
+    gdp_plot_data = data[['GDP', 'Projected_GDP']]
+    st.line_chart(gdp_plot_data)
 
 with chart_col2:
     st.subheader("Inflation vs Projected Inflation (%)")
-    
-    # Matplotlib Figure 2: Inflation
-    fig2, ax2 = plt.subplots(figsize=(8, 4))
-    
-    # Inflation (Baseline)
-    sns.lineplot(x='Year', y='Inflation', data=data_reset, ax=ax2, label='Baseline Inflation', color='#D9534F', linewidth=2)
-    
-    # Projected Inflation (Scenario)
-    sns.lineplot(x='Year', y='Projected_Inflation', data=data_reset, ax=ax2, label='Projected Inflation', color='#5CB85C', linestyle='--', linewidth=2)
-    
-    # Add RBI Target Line
-    ax2.axhline(RBI_TARGET_INFLATION, color='gray', linestyle=':', label=f'Target ({RBI_TARGET_INFLATION}%)')
-    
-    ax2.set_title("Inflation vs Projected Inflation (%)", fontsize=14)
-    ax2.set_ylabel("Inflation (%)", fontsize=12)
-    ax2.set_xlabel("Year", fontsize=12)
-    ax2.legend(loc='upper left')
-    plt.tight_layout()
-    st.pyplot(fig2)
-    plt.close(fig2) # Close figure to prevent memory warning
+    # Select and plot both columns, keeping Year as index
+    inflation_plot_data = data[['Inflation', 'Projected_Inflation']]
+    st.line_chart(inflation_plot_data)
+    st.markdown(f"**Target Inflation:** The RBI's target is **{RBI_TARGET_INFLATION}%** (implied mid-point of target range).")
+
 
 st.markdown("---")
 
