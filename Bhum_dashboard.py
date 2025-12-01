@@ -1,241 +1,336 @@
+# Bhum_dashboard_enhanced.py
 import streamlit as st
 import pandas as pd
 import numpy as np
-from datetime import date, timedelta
+from io import BytesIO
 
-# --- Custom CSS for Professional Look (RBI-Inspired Tones: Blue/Gold/Silver) ---
-st.markdown("""
-<style>
-/* Font and overall container styling */
-.main {
-    background-color: #F8F9FA; /* Light gray background */
-}
-h1, h2, h3, h4, .css-1dp5ss7 {
-    color: #004D99; /* Deep RBI Blue */
-}
-.stMetric {
-    background-color: #FFFFFF;
-    padding: 20px;
-    border-radius: 12px;
-    border-left: 5px solid #FFC300; /* Gold Accent */
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-    transition: transform 0.2s;
-}
-.stMetric:hover {
-    transform: translateY(-2px);
-}
-/* Native Streamlit chart area styling */
-.stLineChart, .stBarChart {
-    padding: 10px;
-    border-radius: 10px;
-    background-color: #FFFFFF;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
-}
-/* Style for the scenario summary table */
-div[data-testid="stTable"] table {
-    border-radius: 10px;
-    overflow: hidden;
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-}
-</style>
-""", unsafe_allow_html=True)
-
-# --- HYPOTHETICAL CENTRAL BANK PARAMETERS ---
-RBI_TARGET_INFLATION = 4.0 # CPI Target set by the government, typically 4% +/- 2%
-CURRENT_REPO_RATE = 6.5  # Current hypothetical policy rate
+# Try to import matplotlib for heatmap plotting; if not available we fall back.
+try:
+    import matplotlib.pyplot as plt
+    MATPLOTLIB_AVAILABLE = True
+except Exception:
+    MATPLOTLIB_AVAILABLE = False
 
 # ---------- PAGE CONFIG ----------
-st.set_page_config(page_title="Monetary Policy Risk Dashboard", layout="wide")
+st.set_page_config(page_title="Monetary Policy Risk Dashboard (Enhanced)", layout="wide")
 
-st.title("💹 Monetary Policy Risk Dashboard")
-st.markdown("### Simulating Policy Rate and Liquidity Shocks on Macro Outcomes")
+# ---------- THEME SELECTOR (simple CSS tweak) ----------
+theme = st.sidebar.selectbox("Theme", ["Light", "Dark"])
+if theme == "Dark":
+    st.markdown(
+        """
+        <style>
+        .stApp { background-color: #0f1724; color: #e6eef8; }
+        .stButton>button { background-color:#0b84ff; color: white; }
+        .css-1d391kg { color: #e6eef8; }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+else:
+    # minimal reset for light theme
+    st.markdown("<style>.stApp{background-color: white; color: black;}</style>", unsafe_allow_html=True)
+
+st.title("💹 Monetary Policy Risk Dashboard — Enhanced")
+st.markdown(
+    "Interactive simulation of monetary policy shocks with uncertainty, heatmap risk, per-capita views, and automatic insights."
+)
 
 # ---------- SIDEBAR INPUTS ----------
-st.sidebar.header("Policy Scenario Simulation")
-st.sidebar.markdown("Define changes applied to the base scenario:")
-# Using bps (basis points) is more professional for policy rates
-interest_rate_change = st.sidebar.slider("Policy Rate (e.g., Repo Rate) Change (bps)", -200.0, 200.0, 0.0, 25.0, format='%.0f') / 100
-liquidity_change = st.sidebar.slider("Systemic Liquidity Change (%)", -5.0, 5.0, 0.0, 0.5)
-inflation_change = st.sidebar.slider("Exogenous Inflation Shock (%)", -2.0, 2.0, 0.0, 0.25)
+st.sidebar.header("Policy Scenario Inputs")
+
+# baseline inputs (so we can compute real rates)
+baseline_policy_rate = st.sidebar.number_input("Baseline Policy Rate (%)", min_value=0.0, max_value=20.0, value=6.0, step=0.25)
+baseline_inflation = st.sidebar.number_input("Baseline Inflation (%)", min_value=-5.0, max_value=20.0, value=5.0, step=0.1)
+
+interest_rate_change = st.sidebar.slider("Interest Rate Change (percentage points)", -2.0, 2.0, 0.0, 0.25)
+liquidity_change = st.sidebar.slider("Liquidity Change (%)", -5.0, 5.0, 0.0, 0.5)
+inflation_change = st.sidebar.slider("Inflation Change (percentage points)", -2.0, 2.0, 0.0, 0.25)
+
+# population inputs for per-capita
+st.sidebar.markdown("---")
+base_population = st.sidebar.number_input("Base Population (millions)", min_value=1.0, value=1400.0, step=1.0)  # millions
+pop_growth_rate = st.sidebar.slider("Annual Population Growth (%)", 0.0, 2.5, 0.9, 0.1)
+
+# scenario presets
+scenario = st.sidebar.selectbox("Scenario Preset", ["Custom", "Tightening cycle", "Easing cycle", "Liquidity shock", "Inflation shock", "Stagflation"])
+if scenario != "Custom":
+    if scenario == "Tightening cycle":
+        interest_rate_change = 1.0
+        liquidity_change = -1.0
+        inflation_change = -0.25
+    elif scenario == "Easing cycle":
+        interest_rate_change = -1.0
+        liquidity_change = 2.0
+        inflation_change = 0.25
+    elif scenario == "Liquidity shock":
+        interest_rate_change = 0.0
+        liquidity_change = -4.0
+        inflation_change = 0.2
+    elif scenario == "Inflation shock":
+        interest_rate_change = 0.5
+        liquidity_change = 0.0
+        inflation_change = 1.5
+    elif scenario == "Stagflation":
+        interest_rate_change = 0.5
+        liquidity_change = -1.5
+        inflation_change = 1.2
 
 # ---------- SIMULATED HISTORICAL DATA ----------
 years = list(range(2010, 2026))
-gdp = [1000 + i*50 + np.random.randint(-20, 20) for i in range(len(years))] # Example GDP in billions
-inflation = [5 + np.random.uniform(-1, 1) for _ in range(len(years))] # Example CPI %
+rng = np.random.default_rng(seed=42)  # deterministic noise for reproducibility
 
-data = pd.DataFrame({
-    "Year": years,
-    "GDP": gdp,
-    "Inflation": inflation
-})
-data = data.set_index('Year')
+# baseline historical GDP (in billions) and inflation (%)
+gdp = [1000 + i * 50 + int(rng.integers(-20, 20)) for i in range(len(years))]
+inflation = [5.0 + float(rng.uniform(-1.0, 1.0)) for _ in range(len(years))]
 
-# ---------- SIMULATE IMPACT ----------
-# Simple econometric-style formulas to simulate effect
-data['Projected_GDP'] = data['GDP'] * (1 - 0.002*interest_rate_change + 0.001*liquidity_change - 0.003*inflation_change)
-data['Projected_Inflation'] = data['Inflation'] + inflation_change
+data = pd.DataFrame({"Year": years, "GDP": gdp, "Inflation": inflation})
+data = data.set_index("Year")
 
-# --- CALCULATE ADVANCED METRICS ---
-latest_gdp = data['Projected_GDP'].iloc[-1]
-latest_inflation = data['Projected_Inflation'].iloc[-1]
-projected_interest_rate = CURRENT_REPO_RATE + interest_rate_change
-real_interest_rate = projected_interest_rate - latest_inflation
-inflation_target_gap = latest_inflation - RBI_TARGET_INFLATION
+# ---------- ADVANCED / NONLINEAR SIMULATION ----------
+# We'll compute projected values and also a best/worst (confidence band).
+# Nonlinear formula idea:
+# - interest effect: larger hikes have accelerating negative impact (quadratic)
+# - liquidity effect: positive liquidity helps but with diminishing returns (saturating)
+# - inflation effect: higher inflation reduces real GDP (linear + quadratic penalty above 2%)
+#
+# We'll also produce per-capita GDP with user population inputs.
 
-# ---------- RISK SCORE & METRICS (Organized in Columns) ----------
-st.subheader("Key Macro Indicators & Scenario Risk")
+# helper params (tunable)
+alpha_int = 0.6   # sensitivity to interest change (linear)
+beta_int = 0.25   # quadratic term coefficient (accelerating effect)
+alpha_liq = 0.15  # sensitivity to liquidity (linear)
+gamma_infl = 0.35 # sensitivity to inflation change
+quadratic_infl_threshold = 2.0  # if inflation_change above this, extra penalty
 
-col1, col2, col3, col4 = st.columns(4)
+projected_gdp = []
+projected_infl = []
+proj_gdp_best = []
+proj_gdp_worst = []
 
-# 1. Overall Risk Score
-risk_score = abs(interest_rate_change)*3 + abs(liquidity_change)*2 + abs(inflation_change)*4
-risk_level = ""
-if risk_score < 3:
-    risk_level = "Low (Green)"
-    risk_color = "green"
-elif risk_score < 6:
-    risk_level = "Medium (Yellow)"
-    risk_color = "off"
+# Historical volatility to generate confidence bands
+gdp_vol_pct = np.std(np.diff(data["GDP"])) / np.mean(data["GDP"])  # rough
+if np.isnan(gdp_vol_pct) or gdp_vol_pct <= 0:
+    gdp_vol_pct = 0.02
+
+for y in data.index:
+    base_gdp = data.loc[y, "GDP"]
+    base_infl = data.loc[y, "Inflation"]
+
+    # Nonlinear interest effect (percentage of GDP)
+    int_lin = alpha_int * interest_rate_change
+    int_quad = beta_int * (max(0, interest_rate_change) ** 2) if interest_rate_change > 0 else beta_int * (min(0, interest_rate_change) ** 2)  # symmetric
+    interest_effect_pct = int_lin + int_quad  # positive means % reduction when interest goes up
+
+    # Liquidity effect (diminishing returns): use tanh-like saturating function scaled
+    liquidity_effect_pct = alpha_liq * np.tanh(liquidity_change / 5.0)  # scaled so +/-5 maps into tanh range
+
+    # Inflation penalty: linear plus extra quadratic penalty beyond threshold
+    infl_effect_pct = gamma_infl * inflation_change
+    if abs(inflation_change) > quadratic_infl_threshold:
+        infl_effect_pct += 0.05 * (abs(inflation_change) - quadratic_infl_threshold) ** 2 * np.sign(inflation_change)  # extra penalty
+
+    # Combined percent change to GDP (positive means growth, negative means contraction)
+    combined_pct = -interest_effect_pct + liquidity_effect_pct - infl_effect_pct
+
+    # Convert percentage (units are percentage points) into absolute GDP change
+    projected = base_gdp * (1 + combined_pct / 100.0)
+    # ensure projected not negative
+    projected = max(projected, 0.0)
+
+    # Confidence band +/- based on volatility and magnitude of shocks
+    shock_strength = (abs(interest_rate_change) * 0.6 + abs(liquidity_change) * 0.3 + abs(inflation_change) * 0.8)
+    band_multiplier = 1 + min(0.6, shock_strength / 5.0)  # bigger shocks -> wider band up to 60% increase in band
+    band = base_gdp * gdp_vol_pct * band_multiplier
+
+    best = projected + band
+    worst = max(projected - band, 0.0)
+
+    projected_gdp.append(projected)
+    proj_gdp_best.append(best)
+    proj_gdp_worst.append(worst)
+
+    # Inflation projection is simpler: base + inflation_change + small diffusion
+    projected_inflation = base_infl + inflation_change
+    # Clip unrealistic inflation
+    projected_inflation = float(np.clip(projected_inflation, -10, 50))
+    projected_infl.append(projected_inflation)
+
+# add to dataframe
+data["Projected_GDP"] = projected_gdp
+data["GDP_Best"] = proj_gdp_best
+data["GDP_Worst"] = proj_gdp_worst
+data["Projected_Inflation"] = projected_infl
+
+# ---------- PER-CAPITA CALCULATION ----------
+# Build population timeline based on user base pop and growth rate
+pop_millions = [base_population * ((1 + pop_growth_rate / 100.0) ** i) for i in range(len(years))]
+pop = np.array(pop_millions)  # in millions
+data["Population_millions"] = pop
+# GDP per capita in thousands (so it's readable) -> (GDP billions) / (population millions) * 1000 = per-capita in thousands
+data["GDP_per_capita_k"] = (data["GDP"] / data["Population_millions"]) * 1000.0
+data["Projected_GDP_per_capita_k"] = (data["Projected_GDP"] / data["Population_millions"]) * 1000.0
+
+# ---------- REAL EFFECTIVE INTEREST RATE ----------
+# We interpret baseline_policy_rate and baseline_inflation as levels; compute new real rate after change
+# Note: user provided baseline_inflation and baseline_policy_rate above
+new_nominal_rate = baseline_policy_rate + interest_rate_change
+new_inflation_rate = baseline_inflation + inflation_change
+real_rate = new_nominal_rate - new_inflation_rate
+
+# ---------- RISK SCORE: improved (weighted + contributions + heatmap input) ----------
+# Build contributions per component (normalized)
+contrib_interest = abs(interest_rate_change) * 3.0
+contrib_liquidity = abs(liquidity_change) * 2.0
+contrib_inflation = abs(inflation_change) * 4.0
+risk_score = contrib_interest + contrib_liquidity + contrib_inflation
+# Normalize to 0-10 scale roughly
+risk_score_normalized = min(10.0, (risk_score / 9.0) * 10.0)
+
+if risk_score_normalized < 3:
+    risk_level = "Low"
+elif risk_score_normalized < 6:
+    risk_level = "Medium"
 else:
-    risk_level = "High (Red)"
-    risk_color = "red"
+    risk_level = "High"
 
-col1.metric(
-    label="⚠️ Overall Risk Score (0-10)", 
-    value=f"{risk_score:.1f} ({risk_level})", 
+# ---------- UI LAYOUT ----------
+st.subheader("Scenario Overview")
+left, right = st.columns([2, 1])
+with left:
+    st.write("**Policy inputs**")
+    st.write(f"- Baseline policy rate: **{baseline_policy_rate:.2f}%**")
+    st.write(f"- Baseline inflation: **{baseline_inflation:.2f}%**")
+    st.write(f"- Scenario preset: **{scenario}**")
+    st.write(f"- Interest rate change: **{interest_rate_change:+.2f} pp**")
+    st.write(f"- Liquidity change: **{liquidity_change:+.2f}%**")
+    st.write(f"- Inflation change: **{inflation_change:+.2f} pp**")
+    st.write(f"- Base population: **{base_population:.1f}M**, growth: **{pop_growth_rate:.2f}%**")
+with right:
+    st.metric("Risk Score (0-10)", f"{risk_score_normalized:.2f}", delta=f"Level: {risk_level}")
+    st.metric("Real Policy Rate (%)", f"{real_rate:.2f}", delta=f"Nominal: {new_nominal_rate:.2f}%, Inflation: {new_inflation_rate:.2f}%")
+
+# ---------- PLOTS (Streamlit native charts) ----------
+st.subheader("GDP & Projections")
+gdp_plot = data[["GDP", "Projected_GDP"]].copy()
+st.line_chart(gdp_plot)
+
+# show confidence bands as area chart (we'll show best and worst as area fill)
+st.subheader("Projected GDP with Confidence Bands")
+band_df = data[["Projected_GDP", "GDP_Best", "GDP_Worst"]].reset_index()
+# area chart: project worst->projected->best as three lines. Streamlit can't fill between easily; we show lines and also table.
+st.line_chart(band_df.set_index("Year")[["Projected_GDP", "GDP_Best", "GDP_Worst"]])
+
+st.subheader("Inflation Projection")
+st.line_chart(data[["Inflation", "Projected_Inflation"]])
+
+st.subheader("GDP per Capita (thousands)")
+st.line_chart(data[["GDP_per_capita_k", "Projected_GDP_per_capita_k"]])
+
+# ---------- 1. Baseline vs Scenario comparison table ----------
+st.subheader("Baseline vs Projected (Latest Year Comparison)")
+latest_year = data.index.max()
+baseline_gdp_latest = data.loc[latest_year, "GDP"]
+projected_gdp_latest = data.loc[latest_year, "Projected_GDP"]
+baseline_infl_latest = data.loc[latest_year, "Inflation"]
+projected_infl_latest = data.loc[latest_year, "Projected_Inflation"]
+
+comparison = pd.DataFrame({
+    "Metric": ["GDP (billions)", "Inflation (%)", "GDP per capita (k)"],
+    "Baseline": [baseline_gdp_latest, baseline_infl_latest, data.loc[latest_year, "GDP_per_capita_k"]],
+    "Projected": [projected_gdp_latest, projected_infl_latest, data.loc[latest_year, "Projected_GDP_per_capita_k"]]
+})
+comparison["Change_pct"] = ((comparison["Projected"] - comparison["Baseline"]) / comparison["Baseline"]) * 100.0
+st.table(comparison.style.format({"Baseline": "{:.2f}", "Projected": "{:.2f}", "Change_pct": "{:+.2f}%"}))
+
+# ---------- 4. Heatmap of Risk Contributions ----------
+st.subheader("Risk Contribution Heatmap (per component)")
+heat_df = pd.DataFrame({
+    "Component": ["Interest Rate", "Liquidity", "Inflation"],
+    "Change": [interest_rate_change, liquidity_change, inflation_change],
+    "Contribution (raw)": [contrib_interest, contrib_liquidity, contrib_inflation]
+}).set_index("Component")
+
+# Normalize for heat visualization 0-1
+norm = (heat_df["Contribution (raw)"] - heat_df["Contribution (raw)"].min()) / (heat_df["Contribution (raw)"].ptp() + 1e-9)
+heat_df["Normalized"] = norm
+
+if MATPLOTLIB_AVAILABLE:
+    fig, ax = plt.subplots(figsize=(5, 1.5))
+    sns_data = heat_df[["Normalized"]].T  # one-row heatmap
+    # Use imshow
+    ax.imshow(sns_data, aspect="auto", cmap="Reds")
+    ax.set_yticks([])
+    ax.set_xticks(range(len(heat_df.index)))
+    ax.set_xticklabels(heat_df.index, rotation=20)
+    for i, val in enumerate(heat_df["Normalized"]):
+        ax.text(i, 0, f"{heat_df['Change'].iloc[i]:+.2f}\n({heat_df['Contribution (raw)'].iloc[i]:.1f})", ha="center", va="center", color="black", fontsize=9)
+    st.pyplot(fig)
+else:
+    # fallback: styled dataframe with background gradient
+    st.dataframe(heat_df.style.background_gradient(subset=["Normalized"], cmap="Reds").format({"Change": "{:+.2f}", "Contribution (raw)": "{:.2f}"}))
+
+# ---------- 5. Dynamic Insights (AI-like logic) ----------
+st.subheader("Automated Insights")
+insights = []
+# Insight based on contributions
+dominant = heat_df["Contribution (raw)"].idxmax()
+insights.append(f"- The largest contributor to risk is **{dominant}** (contribution: {heat_df.loc[dominant, 'Contribution (raw)']:.2f}).")
+
+# Interpret direction
+if interest_rate_change > 0:
+    insights.append(f"- Rising interest rates ({interest_rate_change:+.2f} pp) are likely to **slow GDP growth** and tighten financial conditions.")
+elif interest_rate_change < 0:
+    insights.append(f"- Cutting interest rates ({interest_rate_change:+.2f} pp) provides stimulus and may boost growth.")
+else:
+    insights.append("- Interest rate stance unchanged in this scenario.")
+
+if liquidity_change < 0:
+    insights.append(f"- Liquidity contraction ({liquidity_change:+.2f}%) could pressure markets and credit availability.")
+elif liquidity_change > 0:
+    insights.append(f"- Liquidity injection ({liquidity_change:+.2f}%) supports activity and financial markets.")
+else:
+    insights.append("- No major change in liquidity.")
+
+if inflation_change > 0.5:
+    insights.append(f"- Inflation is rising by {inflation_change:+.2f} pp — monetary tightening may be appropriate to anchor expectations.")
+elif inflation_change < -0.5:
+    insights.append(f"- Inflation is falling by {inflation_change:+.2f} pp — policy could stay accommodative to support demand.")
+else:
+    insights.append("- Inflation change is modest.")
+
+# Put a combined risk insight
+if risk_score_normalized >= 7:
+    insights.append("- Overall assessment: **High risk**. Consider combining measured liquidity support with targeted supply-side measures.")
+elif risk_score_normalized >= 4:
+    insights.append("- Overall assessment: **Medium risk**. Monitor incoming data and be ready to adjust policy.")
+else:
+    insights.append("- Overall assessment: **Low risk**. Scenario appears manageable.")
+
+for line in insights:
+    st.write(line)
+
+# ---------- DOWNLOAD BUTTON ----------
+st.subheader("Download Simulation Data")
+csv = data.reset_index().to_csv(index=False).encode("utf-8")
+st.download_button("Download full simulation CSV", csv, file_name="monetary_simulation.csv", mime="text/csv")
+
+# ---------- OPTIONAL: Show raw table and last-year summary ----------
+with st.expander("Show full simulation table"):
+    st.dataframe(data.reset_index().round(3))
+
+st.subheader("Last Year / Snapshot")
+snapshot = pd.DataFrame({
+    "Metric": ["Baseline GDP (b)", "Projected GDP (b)", "Baseline Inflation (%)", "Projected Inflation (%)", "Real Policy Rate (%)"],
+    "Value": [baseline_gdp_latest, projected_gdp_latest, baseline_infl_latest, projected_infl_latest, real_rate]
+})
+st.table(snapshot.style.format({"Value": "{:.2f}"}))
+
+st.markdown(
+    """
+    ---
+    **Notes:** 
+    - This is a simplified simulation tool for scenario exploration. For formal policy work integrate high-frequency macro time-series and structural models.
+    - Nonlinear terms and confidence bands are illustrative.
+    """
 )
-
-# 2. Real Interest Rate
-col2.metric(
-    label="Real Interest Rate (%)",
-    value=f"{real_interest_rate:.2f}",
-    help="Policy Rate minus Latest Projected Inflation. Positive implies tighter policy."
-)
-
-# 3. Inflation Target Gap
-gap_delta_color = "red" if inflation_target_gap > 0.5 else ("green" if inflation_target_gap < -0.5 else "off")
-col3.metric(
-    label=f"Projected CPI Inflation Rate (Target: {RBI_TARGET_INFLATION}%)", 
-    value=f"{latest_inflation:.2f}%", 
-    delta=f"{inflation_target_gap:.2f} pp Gap", 
-    delta_color=gap_delta_color
-)
-
-# 4. Projected GDP Growth
-gdp_growth_rate = (data['Projected_GDP'].iloc[-1] / data['GDP'].iloc[-2] - 1) * 100
-gdp_delta = gdp_growth_rate - (data['GDP'].iloc[-1] / data['GDP'].iloc[-2] - 1) * 100
-col4.metric(
-    label="Projected GDP Growth Rate (YoY)",
-    value=f"{gdp_growth_rate:.2f}%",
-    delta=f"{gdp_delta:.2f} pp change from baseline"
-)
-
-st.markdown("---")
-
-# ---------- CHARTS (Organized in Two Columns) ----------
-chart_col1, chart_col2 = st.columns(2)
-
-with chart_col1:
-    st.subheader("GDP vs Projected GDP (in billions)")
-    gdp_plot_data = data[['GDP', 'Projected_GDP']]
-    st.line_chart(gdp_plot_data)
-
-with chart_col2:
-    st.subheader("Inflation vs Projected Inflation (%)")
-    inflation_plot_data = data[['Inflation', 'Projected_Inflation']]
-    st.line_chart(inflation_plot_data)
-
-# ---------- NEW FEATURE: YIELD CURVE SIMULATION AND FORWARD GUIDANCE ----------
-st.subheader("Financial Market Impact & Policy Forward Guidance")
-
-yield_col, forward_col = st.columns([1.5, 1])
-
-# --- NEW FEATURE 1: Yield Curve Simulation ---
-with yield_col:
-    st.markdown("#### Projected Government Securities Yield Curve")
-    tenors = ['3M', '6M', '1Y', '3Y', '5Y', '10Y', '15Y']
-    
-    # Base Curve (Slightly upward sloping)
-    base_yields = [6.0, 6.2, 6.5, 6.8, 7.0, 7.2, 7.3]
-    
-    # Policy Impact on Yields (stronger impact on short end, weaker on long end)
-    impact_factor = np.array([1.2, 1.1, 1.0, 0.8, 0.6, 0.4, 0.3])
-    projected_yields = base_yields + (interest_rate_change * impact_factor)
-    
-    yield_data = pd.DataFrame({
-        "Base Yield": base_yields,
-        "Projected Yield": projected_yields
-    }, index=tenors)
-    
-    st.line_chart(yield_data)
-    st.markdown("The change in the policy rate primarily affects the short end (3M, 6M) of the curve.")
-
-# --- NEW FEATURE 2: Forward Guidance Indicator ---
-with forward_col:
-    st.markdown("#### Dynamic Forward Guidance")
-    
-    if real_interest_rate < 0 and inflation_target_gap > 0.5:
-        guidance = "**Policy Expected to Tighten Significantly.** The Real Rate is negative and inflation is clearly above target. Strong action is expected."
-        color_class = "stMetric"
-    elif real_interest_rate > 1.0 and inflation_target_gap < -0.5:
-        guidance = "**Scope for Accommodative Measures.** The policy is tight (Real Rate > 1%) and inflation is well below target. Rate cuts may be considered."
-        color_class = "stMetric"
-    elif abs(real_interest_rate - 0.5) < 0.5 and abs(inflation_target_gap) < 0.5:
-        guidance = "**Neutral Stance / Wait-and-Watch.** The Real Rate is near historical norms and inflation is anchored near the target. Focus on data dependency."
-        color_class = "stMetric"
-    else:
-        guidance = "**Data Dependent Approach.** Current metrics are mixed. Policy adjustment will depend on incoming data."
-        color_class = "stMetric"
-
-    st.container().markdown(
-        f"""<div class="{color_class}" style="border-left: 5px solid #004D99; background-color: #E6F7FF; padding: 15px;">{guidance}</div>""",
-        unsafe_allow_html=True
-    )
-    st.markdown("*(Guidance is dynamically generated based on Real Rate and Target Gap).*")
-
-# ---------- NEW FEATURE: INFLATION DRIVERS ----------
-st.markdown("---")
-st.subheader("Detailed Analysis: Projected Inflation Drivers")
-
-# --- NEW FEATURE 3: Inflation Decomposition Chart ---
-# Mock data for Inflation Components (normalized to latest_inflation)
-mock_drivers = {
-    'Component': ['Core Inflation', 'Food & Beverages', 'Fuel & Light'],
-    'Weight': [0.65, 0.25, 0.10], # Hypothetical RBI weights
-    'Contribution (%)': [latest_inflation * 0.60, latest_inflation * 0.30, latest_inflation * 0.10]
-}
-drivers_df = pd.DataFrame(mock_drivers).set_index('Component')
-
-st.bar_chart(drivers_df['Contribution (%)'])
-st.markdown(f"**Core Inflation Contribution:** This component ({drivers_df.loc['Core Inflation', 'Contribution (%)']:.2f}%) is heavily influenced by domestic demand and wage growth, making it sensitive to policy rate changes.")
-
-st.markdown("---")
-
-# ---------- SCENARIO SUMMARY & POLICY INSIGHTS ----------
-
-summary_col, insight_col = st.columns([1.5, 2])
-
-with summary_col:
-    st.subheader("📊 Scenario Summary: Policy Inputs")
-    summary_data = {
-        "Policy": ["Interest Rate Change (bps)", "Liquidity Change (%)", "Exogenous Inflation Shock (%)"],
-        "Change Applied": [interest_rate_change * 100, liquidity_change, inflation_change]
-    }
-    summary_df = pd.DataFrame(summary_data)
-    st.table(summary_df.set_index('Policy'))
-
-with insight_col:
-    st.subheader("💡 Policy Commentary")
-    st.info(
-        f"""
-        **Monetary Stance:** A change of **{interest_rate_change*100:.0f} bps** to the policy rate, combined with a **{liquidity_change:+.2f}%** liquidity adjustment, leads to a projected **Real Interest Rate of {real_interest_rate:.2f}%**.
-        
-        This translates to an **Inflation Target Gap of {inflation_target_gap:.2f} pp**. If the gap is positive, inflation is expected to be above the RBI's target. The central bank would likely need a tighter monetary stance (higher policy rates) to anchor expectations.
-        """
-    )
-
-
-st.markdown("""
----
-*Disclaimer:* This dashboard uses simplified simulation formulas to demonstrate the qualitative effects of monetary policy. For real-world analysis, integrating actual RBI data and sophisticated econometric models (e.g., Dynamic Stochastic General Equilibrium models) would be necessary.
-""")
